@@ -1,0 +1,84 @@
+{
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "public/index.html",
+    "distDir": "public",
+    "withGlobalTauri": true
+  },
+  "package": {
+    "productName": "Beam Patcher",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "scope": ["$RESOURCE/**", "$RESOURCE/assets/**"]
+      },
+      "protocol": {
+        "all": false,
+        "asset": true,
+        "assetScope": ["$RESOURCE/**", "$RESOURCE/assets/**"]
+      },
+      "shell": {
+        "all": false,
+        "open": true
+      },
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": true
+      },
+      "window": {
+        "all": false,
+        "close": true,
+        "hide": true,
+        "show": true,
+        "maximize": true,
+        "minimize": true,
+        "unmaximize": true,
+        "unminimize": true,
+        "startDragging": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "identifier": "com.beampatcher.app",
+      "targets": "all",
+      "resources": [
+        "public/assets/*"
+      ]
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://patch.example.com/updates/{{target}}/{{current_version}}"
+      ],
+      "dialog": true,
+      "pubkey": "YOUR_UPDATER_PUBLIC_KEY_HERE"
+    },
+    "windows": [
+      {
+        "title": "Beam Patcher - Advanced RO Launcher",
+        "width": 900,
+        "height": 600,
+        "resizable": false,
+        "fullscreen": false,
+        "decorations": false
+      }
+    ]
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "download_url": "https://patch.yourserver.com/updates/beam-patcher-v1.0.0.exe",
+  "changelog": "Initial release of Beam Patcher\n\n- Full GRF patching support (0x101, 0x102, 0x103, 0x200, 3.00)\n- THOR patch format support\n- RGZ and GPF format support\n- Multiple mirror support\n- SSO login integration\n- Auto-updater\n- Customizable web-based UI\n- Cross-platform support",
+  "required": false
+}

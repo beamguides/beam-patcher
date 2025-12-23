@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Beam Patcher - Advanced RO Launcher</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #video-background {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            z-index: -1;
+        }
+
+        .launcher-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .header {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(10px);
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 40px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .header-drag {
+            flex: 1;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            cursor: move;
+        }
+
+        .app-title {
+            font-weight: 600;
+            color: white;
+            font-size: 13px;
+            letter-spacing: 1px;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .window-controls {
+            display: flex;
+            height: 100%;
+        }
+
+        .window-btn {
+            width: 45px;
+            height: 100%;
+            border: none;
+            background: transparent;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .window-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .window-btn-close:hover {
+            background: #ef4444;
+            color: white;
+        }
+
+        .window-btn svg {
+            width: 16px;
+            height: 16px;
+            stroke: currentColor;
+            fill: none;
+            stroke-width: 2;
+            stroke-linecap: round;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 30px;
+            gap: 20px;
+        }
+
+        .server-title {
+            font-size: 48px;
+            font-weight: 900;
+            color: white;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.9);
+            letter-spacing: 3px;
+            margin-bottom: 10px;
+        }
+
+        .status-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            width: 100%;
+            max-width: 600px;
+            margin: 20px 0;
+        }
+
+        .status-card {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 12px;
+            padding: 15px 20px;
+        }
+
+        .status-card-header {
+            font-size: 11px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.6);
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+        }
+
+        .status-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+        }
+
+        .status-value {
+            color: white;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .status-online {
+            color: #10b981;
+        }
+
+        .status-offline {
+            color: #ef4444;
+        }
+
+        .buttons-container {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-2px);
+        }
+
+        .progress-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(15px);
+            padding: 15px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .progress-info {
+            flex: 1;
+        }
+
+        .progress-label {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 6px;
+        }
+
+        .progress-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #10b981, #3b82f6);
+            width: 0%;
+            transition: width 0.3s;
+            border-radius: 3px;
+        }
+
+        .btn-start {
+            padding: 12px 50px;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6);
+        }
+
+        .btn-start:disabled {
+            background: rgba(100, 116, 139, 0.5);
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: rgba(20, 20, 30, 0.95);
+            backdrop-filter: blur(20px);
+            padding: 30px;
+            border-radius: 15px;
+            width: 450px;
+            max-width: 90%;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .modal-header {
+            font-size: 20px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 20px;
+        }
+
+        .setting-item {
+            margin-bottom: 18px;
+        }
+
+        .setting-label {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .setting-select {
+            width: 100%;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+            color: white;
+            font-size: 13px;
+        }
+
+        .setting-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .setting-checkbox input {
+            width: 18px;
+            height: 18px;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 25px;
+        }
+
+        .btn-primary {
+            flex: 1;
+            padding: 12px;
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+        }
+
+        .btn-secondary {
+            flex: 1;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+    </style>
+</head>
+<body>
+    <video id="video-background" autoplay loop muted playsinline></video>
+
+    <div class="launcher-container">
+        <div class="header">
+            <div class="header-drag" data-tauri-drag-region>
+                <div class="app-title" id="header-title">BEAM PATCHER</div>
+            </div>
+            <div class="window-controls">
+                <button class="window-btn window-btn-minimize" onclick="minimizeWindow()" title="Minimize">
+                    <svg viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+                </button>
+                <button class="window-btn window-btn-close" onclick="closeWindow()" title="Close">
+                    <svg viewBox="0 0 24 24"><path d="M6 6l12 12M6 18L18 6"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="server-title" id="server-title">GOAT MMO</div>
+
+            <div class="status-container">
+                <div class="status-card">
+                    <div class="status-card-header">Server Status</div>
+                    <div class="status-item">
+                        <span class="status-label">Login:</span>
+                        <span class="status-value status-online" id="login-status">Online</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Char:</span>
+                        <span class="status-value status-online" id="char-status">Online</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Map:</span>
+                        <span class="status-value status-online" id="map-status">Online</span>
+                    </div>
+                </div>
+
+                <div class="status-card">
+                    <div class="status-card-header">Client Status</div>
+                    <div class="status-item">
+                        <span class="status-label">Client:</span>
+                        <span class="status-value" id="client-exe-status">Loading...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label" id="server-name-label">Files:</span>
+                        <span class="status-value" id="server-status">Loading...</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Players:</span>
+                        <span class="status-value" id="players-online">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="buttons-container">
+                <button class="btn" onclick="openModal('settings')">⚙️ Settings</button>
+                <button class="btn" onclick="selectGameDirectory()">📁 Game Folder</button>
+                <button class="btn" onclick="repairGame()">🔧 Repair</button>
+            </div>
+        </div>
+
+        <div class="progress-container">
+            <div class="progress-info">
+                <div class="progress-label" id="status-message">Ready to patch</div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar" id="progress-bar"></div>
+                </div>
+            </div>
+            <button class="btn-start" id="start-button" onclick="handleStartButton()">START</button>
+        </div>
+    </div>
+
+    <div class="modal" id="settings-modal">
+        <div class="modal-content">
+            <div class="modal-header">⚙️ Game Settings</div>
+            <div class="setting-item">
+                <label class="setting-label">Resolution</label>
+                <select class="setting-select" id="resolution">
+                    <option value="800x600">800 x 600</option>
+                    <option value="1024x768">1024 x 768</option>
+                    <option value="1280x720">1280 x 720 (HD)</option>
+                    <option value="1920x1080" selected>1920 x 1080 (Full HD)</option>
+                </select>
+            </div>
+            <div class="setting-item">
+                <label class="setting-label">Graphics Mode</label>
+                <select class="setting-select" id="graphics-mode">
+                    <option value="windowed">Windowed</option>
+                    <option value="fullscreen">Fullscreen</option>
+                    <option value="borderless">Borderless Window</option>
+                </select>
+            </div>
+            <div class="setting-item">
+                <div class="setting-checkbox">
+                    <input type="checkbox" id="sound-enabled" checked>
+                    <label class="setting-label" style="margin: 0">Enable Sound</label>
+                </div>
+            </div>
+            <div class="setting-item">
+                <div class="setting-checkbox">
+                    <input type="checkbox" id="bgm-enabled" checked>
+                    <label class="setting-label" style="margin: 0">Enable BGM</label>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn-primary" onclick="saveSettings()">Save Settings</button>
+                <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { invoke } = window.__TAURI__.tauri;
+        const { appWindow } = window.__TAURI__.window;
+
+        async function minimizeWindow() {
+            await appWindow.minimize();
+        }
+
+        async function closeWindow() {
+            await appWindow.close();
+        }
+
+        let isPatchingComplete = false;
+
+        async function handleStartButton() {
+            const startButton = document.getElementById('start-button');
+            
+            if (isPatchingComplete || startButton.textContent === 'PLAY NOW') {
+                await playGame();
+            } else {
+                await startPatching();
+            }
+        }
+
+        async function startPatching() {
+            const statusMessage = document.getElementById('status-message');
+            const progressBar = document.getElementById('progress-bar');
+            const startButton = document.getElementById('start-button');
+
+            try {
+                statusMessage.textContent = 'Checking for updates...';
+                startButton.disabled = true;
+                
+                progressBar.style.width = '30%';
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
+                statusMessage.textContent = 'Downloading patches...';
+                progressBar.style.width = '60%';
+                
+                await invoke('start_patching');
+                
+                progressBar.style.width = '100%';
+                statusMessage.textContent = 'Patching complete!';
+                isPatchingComplete = true;
+                
+                startButton.textContent = 'PLAY NOW';
+                startButton.disabled = false;
+            } catch (error) {
+                statusMessage.textContent = `Error: ${error}`;
+                startButton.disabled = false;
+            }
+        }
+
+        async function repairGame() {
+            const statusMessage = document.getElementById('status-message');
+            const progressBar = document.getElementById('progress-bar');
+            
+            statusMessage.textContent = 'Verifying game files...';
+            progressBar.style.width = '0%';
+            
+            try {
+                await invoke('verify_game_files');
+                progressBar.style.width = '100%';
+                statusMessage.textContent = 'Verification complete!';
+                
+                setTimeout(() => {
+                    progressBar.style.width = '0%';
+                    statusMessage.textContent = 'Ready to patch';
+                }, 2000);
+            } catch (error) {
+                statusMessage.textContent = `Repair error: ${error}`;
+            }
+        }
+
+        async function playGame() {
+            try {
+                await invoke('launch_game', { token: 'guest_token' });
+            } catch (error) {
+                alert(`Failed to launch game: ${error}`);
+            }
+        }
+
+        function openModal(modalType) {
+            closeModal();
+            document.getElementById(`${modalType}-modal`).classList.add('active');
+        }
+
+        function closeModal() {
+            document.querySelectorAll('.modal').forEach(modal => {
+                modal.classList.remove('active');
+            });
+        }
+
+        async function saveSettings() {
+            const resolution = document.getElementById('resolution').value;
+            const graphicsMode = document.getElementById('graphics-mode').value;
+            const soundEnabled = document.getElementById('sound-enabled').checked;
+            const bgmEnabled = document.getElementById('bgm-enabled').checked;
+            
+            const [width, height] = resolution.split('x').map(n => parseInt(n));
+            
+            const settings = {
+                resolution_width: width,
+                resolution_height: height,
+                fullscreen: graphicsMode === 'fullscreen',
+                sound_enabled: soundEnabled,
+                bgm_enabled: bgmEnabled,
+                mouse_freedom: true,
+                vsync: true
+            };
+            
+            try {
+                await invoke('apply_game_settings', { settings });
+                alert('Settings saved successfully!');
+                closeModal();
+            } catch (error) {
+                alert(`Failed to save settings: ${error}`);
+            }
+        }
+
+        async function loadGameSettings() {
+            try {
+                const settings = await invoke('load_game_settings');
+                
+                const resolution = `${settings.resolution_width}x${settings.resolution_height}`;
+                document.getElementById('resolution').value = resolution;
+                
+                let graphicsMode = 'windowed';
+                if (settings.fullscreen) graphicsMode = 'fullscreen';
+                document.getElementById('graphics-mode').value = graphicsMode;
+                
+                document.getElementById('sound-enabled').checked = settings.sound_enabled;
+                document.getElementById('bgm-enabled').checked = settings.bgm_enabled;
+            } catch (error) {
+                console.log('No saved settings found, using defaults');
+            }
+        }
+
+        async function selectGameDirectory() {
+            try {
+                const selected = await window.__TAURI__.dialog.open({
+                    directory: true,
+                    multiple: false,
+                    title: 'Select Ragnarok Online Game Directory'
+                });
+                
+                if (selected) {
+                    await invoke('set_game_directory', { directory: selected });
+                    alert('Game directory set successfully!');
+                }
+            } catch (error) {
+                alert(`Failed to set game directory: ${error}`);
+            }
+        }
+
+        async function loadGameDirectory() {
+            try {
+                const directory = await invoke('get_game_directory');
+            } catch (error) {
+                console.error('Failed to load game directory:', error);
+            }
+        }
+
+        async function updateServerStatus() {
+            try {
+                const status = await invoke('get_server_status');
+                
+                const loginStatus = document.getElementById('login-status');
+                const charStatus = document.getElementById('char-status');
+                const mapStatus = document.getElementById('map-status');
+                
+                loginStatus.textContent = status.login_online ? 'Online' : 'Offline';
+                loginStatus.className = status.login_online ? 'status-value status-online' : 'status-value status-offline';
+                
+                charStatus.textContent = status.char_online ? 'Online' : 'Offline';
+                charStatus.className = status.char_online ? 'status-value status-online' : 'status-value status-offline';
+                
+                mapStatus.textContent = status.map_online ? 'Online' : 'Offline';
+                mapStatus.className = status.map_online ? 'status-value status-online' : 'status-value status-offline';
+            } catch (error) {
+                console.error('Failed to get server status:', error);
+            }
+        }
+        
+        async function updateClientStatus() {
+            try {
+                const status = await invoke('get_client_status');
+                
+                const clientExeStatus = document.getElementById('client-exe-status');
+                const serverStatus = document.getElementById('server-status');
+                
+                clientExeStatus.textContent = status.client_exe_status;
+                clientExeStatus.className = status.client_exe_status === 'OK' ? 'status-value status-online' : 'status-value status-offline';
+                
+                serverStatus.textContent = status.server_status;
+                serverStatus.className = status.server_status === 'OK' ? 'status-value status-online' : 'status-value status-offline';
+            } catch (error) {
+                console.error('Failed to get client status:', error);
+                document.getElementById('client-exe-status').textContent = 'Error';
+                document.getElementById('server-status').textContent = 'Error';
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            updateServerStatus();
+            updateClientStatus();
+            
+            setInterval(updateServerStatus, 30000);
+            setInterval(updateClientStatus, 30000);
+            
+            await loadGameDirectory();
+            await loadGameSettings();
+            
+            const config = await invoke('get_config');
+            
+            if (config.app.server_name) {
+                document.getElementById('server-title').textContent = config.app.server_name;
+                document.getElementById('header-title').textContent = config.app.server_name + ' PATCHER';
+            }
+            
+            if (config.app.bgm_autoplay && config.app.bgm_file) {
+                await playBackgroundMusic(config.app.bgm_file);
+            }
+            
+            if (config.app.video_background_enabled && config.app.video_background_file) {
+                await playVideoBackground(config.app.video_background_file);
+            }
+        });
+        
+        async function playBackgroundMusic(bgmPath) {
+            try {
+                const resolvedPath = await invoke('resolve_resource_path', { path: bgmPath });
+                const assetUrl = window.__TAURI__.tauri.convertFileSrc(resolvedPath);
+                const audio = new Audio(assetUrl);
+                audio.loop = true;
+                audio.volume = 0.3;
+                audio.play().catch(err => console.log('BGM autoplay failed:', err));
+            } catch (err) {
+                console.error('Failed to load BGM:', err);
+            }
+        }
+        
+        async function playVideoBackground(videoPath) {
+            try {
+                const resolvedPath = await invoke('resolve_resource_path', { path: videoPath });
+                const assetUrl = window.__TAURI__.tauri.convertFileSrc(resolvedPath);
+                const video = document.getElementById('video-background');
+                video.src = assetUrl;
+                video.load();
+            } catch (err) {
+                console.error('Failed to load video:', err);
+            }
+        }
+
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+# Beam Patcher - Patch List Example
+# Format: filename [checksum]
+# Lines starting with # are comments
+
+# THOR patches
+patch_2024_01_15.thor e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+patch_2024_01_22.thor a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456
+patch_2024_02_01.thor b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef1234567
+
+# RGZ patches
+data_update.rgz c3d4e5f6789012345678901234567890abcdef1234567890abcdef12345678
+
+# GPF patches
+sprites_update.gpf d4e5f6789012345678901234567890abcdef1234567890abcdef123456789
+
+# Without checksums (not recommended)
+# hotfix.thor

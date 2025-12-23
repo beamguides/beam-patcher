@@ -1,0 +1,27 @@
+[package]
+name = "beam-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+beam-formats = { path = "../beam-formats" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+futures = { workspace = true }
+async-trait = { workspace = true }
+sha2 = { workspace = true }
+bytes = { workspace = true }
+self_update = { version = "0.39", features = ["archive-tar", "compression-flate2"] }
+urlencoding = "2.1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.52"

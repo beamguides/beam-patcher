@@ -1,0 +1,35 @@
+[package]
+name = "beam-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+beam-core = { path = "../beam-core" }
+
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+tauri = { version = "1.5", features = [
+    "dialog-open",
+    "dialog-save",
+    "fs-read-file",
+    "protocol-asset",
+    "shell-open", 
+    "updater",
+    "window-close",
+    "window-hide",
+    "window-maximize",
+    "window-minimize",
+    "window-show",
+    "window-start-dragging",
+    "window-unmaximize",
+    "window-unminimize"
+] }
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }

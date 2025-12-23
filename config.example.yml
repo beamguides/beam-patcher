@@ -1,0 +1,48 @@
+app:
+  name: Beam Patcher
+  version: 1.0.0
+  window_title: Beam Patcher - Modern RO Patcher
+  game_directory: D:\ro\game\YOUR GAME CLIENT
+  client_exe: yourclient.exe
+  setup_exe: null
+  bgm_autoplay: true
+  bgm_file: assets/your audio.mp3
+  server_name: YOUR RO
+  video_background_enabled: true
+  video_background_file: assets/your video.mp4
+patcher:
+  mirrors:
+  - name: Primary Mirror
+    url: https://patch.yourdomain.com/patch/updates/
+    priority: 1
+  patch_list_url: https://patch.yourdomain.com/patch/patchlist.txt
+  target_grf: your.grf
+  allow_manual_patch: true
+  verify_checksums: true
+ui:
+  theme: default
+  custom_css: null
+  logo: null
+  background: null
+  show_progress: true
+  show_file_list: true
+  news_feed_url: null
+  server_status_url: null
+  custom_buttons: []
+  layout:
+    width: 800
+    height: 600
+    use_custom_layout: false
+
+updater:
+  enabled: false
+  check_url: https://patch.yourdomain.com/patch/version.json
+  update_url: https://patch.yourdomain.com/patch/updates
+  auto_update: true
+server:
+  login_server_ip: 127.0.01
+  login_server_port: 6901
+  char_server_ip: 127.0.01
+  char_server_port: 6121
+  map_server_ip: 127.0.01
+  map_server_port: 5121

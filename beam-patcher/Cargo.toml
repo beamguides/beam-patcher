@@ -1,0 +1,22 @@
+[package]
+name = "beam-patcher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+beam-core = { path = "../beam-core" }
+beam-formats = { path = "../beam-formats" }
+beam-ui = { path = "../beam-ui" }
+
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
+clap = { version = "4.4", features = ["derive"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winres = "0.1"

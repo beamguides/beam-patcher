@@ -1,0 +1,45 @@
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config
+config.yml
+config.yaml
+
+# Logs
+*.log
+
+# Build artifacts
+dist/
+*.exe
+*.dmg
+*.app
+*.AppImage
+*.deb
+*.rpm
+
+# Temp
+temp/
+tmp/
+*.tmp
+
+# Node
+node_modules/
+npm-debug.log
+
+# Tauri
+/gen/
+/WixTools/
