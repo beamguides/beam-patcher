@@ -2,9 +2,7 @@
 
 use anyhow::Result;
 use beam_core::Config;
-use beam_ui;
 use clap::Parser;
-use tracing_subscriber;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]

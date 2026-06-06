@@ -104,15 +104,19 @@ impl GameSettingsManager {
     }
     
     fn update_ini_value(&self, lines: &mut Vec<String>, key: &str, value: &str) {
-        let key_prefix = format!("{}=", key);
-        
+        // Accept "KEY=...", "KEY =...", "  key = ..." — match case-insensitively
+        // and ignore surrounding whitespace, so we don't end up with duplicate
+        // keys appended at the bottom of an existing DATA.INI.
         for line in lines.iter_mut() {
-            if line.starts_with(&key_prefix) {
-                *line = format!("{}={}", key, value);
-                return;
+            let trimmed = line.trim_start();
+            if let Some(eq_pos) = trimmed.find('=') {
+                let existing_key = trimmed[..eq_pos].trim();
+                if existing_key.eq_ignore_ascii_case(key) {
+                    *line = format!("{}={}", key, value);
+                    return;
+                }
             }
         }
-        
         lines.push(format!("{}={}", key, value));
     }
     
@@ -191,6 +195,11 @@ impl GameSettingsManager {
         Ok(settings)
     }
     
+    #[cfg(test)]
+    fn update_ini_value_for_test(&self, lines: &mut Vec<String>, key: &str, value: &str) {
+        self.update_ini_value(lines, key, value);
+    }
+
     fn load_from_setup_exe(&self, _path: &Path) -> Result<GameSettings> {
         #[cfg(target_os = "windows")]
         {
@@ -229,5 +238,39 @@ impl GameSettingsManager {
         {
             Ok(GameSettings::default())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mgr() -> GameSettingsManager {
+        GameSettingsManager::new(std::env::temp_dir())
+    }
+
+    #[test]
+    fn ini_match_is_case_insensitive() {
+        let mut lines = vec!["width=800".to_string(), "HEIGHT=600".to_string()];
+        mgr().update_ini_value_for_test(&mut lines, "WIDTH", "1280");
+        mgr().update_ini_value_for_test(&mut lines, "Height", "720");
+        assert_eq!(lines, vec!["WIDTH=1280".to_string(), "Height=720".to_string()]);
+    }
+
+    #[test]
+    fn ini_match_tolerates_surrounding_whitespace() {
+        let mut lines = vec!["  WIDTH = 800 ".to_string()];
+        mgr().update_ini_value_for_test(&mut lines, "WIDTH", "1920");
+        assert_eq!(lines, vec!["WIDTH=1920".to_string()]);
+    }
+
+    #[test]
+    fn ini_appends_only_when_no_match() {
+        let mut lines = vec!["OTHER=42".to_string()];
+        mgr().update_ini_value_for_test(&mut lines, "WIDTH", "1920");
+        assert_eq!(
+            lines,
+            vec!["OTHER=42".to_string(), "WIDTH=1920".to_string()]
+        );
     }
 }

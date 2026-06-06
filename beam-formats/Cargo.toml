@@ -12,7 +12,5 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 flate2 = { workspace = true }
-crc32fast = { workspace = true }
 md5 = { workspace = true }
-des = { workspace = true }
 bytes = { workspace = true }

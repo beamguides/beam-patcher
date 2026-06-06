@@ -206,72 +206,92 @@ impl BeamArchive {
 
     pub fn save<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         let path = path.as_ref();
-        let mut file = std::fs::File::create(path)?;
-        
-        file.write_all(BEAM_MAGIC)?;
-        file.write_all(&self.version.to_le_bytes())?;
-        file.write_all(&(self.entries.len() as u32).to_le_bytes())?;
-        file.write_all(&[0u8; 52])?; // Reserved
-        
-        let mut data_offset = HEADER_SIZE as u64;
-        
-        for entry in self.entries.values() {
-            data_offset += 1; // filename_len
-            data_offset += entry.filename.len() as u64;
-            data_offset += 16; // md5
-            data_offset += 4; // compressed_size
-            data_offset += 4; // uncompressed_size
-            data_offset += 8; // offset
-            data_offset += 1; // grf_path_len
-            if let Some(grf_path) = &entry.grf_path {
-                data_offset += grf_path.len() as u64;
-            }
-        }
-        
-        let mut current_offset = data_offset;
-        let mut compressed_files = Vec::new();
-        
-        for filename in self.entries.keys() {
-            let data = if let Some(data) = self.file_data.get(filename) {
-                data.clone()
+
+        // Stable iteration order — both passes (compress + write table) must
+        // visit entries in the same order so the precomputed data_offset and
+        // the per-entry offsets agree with the bytes we actually write.
+        let order: Vec<String> = self.entries.keys().cloned().collect();
+
+        // First, materialize compressed payloads and record the *actual* sizes.
+        // Earlier code reused the stored entry.compressed_size, which can drift
+        // from what zlib produces on this run → file-table offsets pointing at
+        // the wrong bytes → archive corruption.
+        let mut compressed_files: Vec<(String, Vec<u8>)> = Vec::with_capacity(order.len());
+        for filename in &order {
+            let data = if let Some(d) = self.file_data.get(filename) {
+                d.clone()
             } else if self.file_path.is_some() {
                 self.extract_file(filename)?
             } else {
                 return Err(Error::Custom("No source data available".to_string()));
             };
-            
+
             let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
             encoder.write_all(&data)?;
             let compressed = encoder.finish()?;
-            
             compressed_files.push((filename.clone(), compressed));
         }
-        
-        for (filename, entry) in self.entries.iter_mut() {
+
+        // Sync entry metadata to the freshly compressed sizes.
+        for (filename, compressed) in &compressed_files {
+            if let Some(entry) = self.entries.get_mut(filename) {
+                entry.compressed_size = compressed.len() as u32;
+            }
+        }
+
+        // Compute where the data region starts (= header + serialized table).
+        let mut data_offset = HEADER_SIZE as u64;
+        for filename in &order {
+            let entry = self.entries.get(filename)
+                .ok_or_else(|| Error::Custom(format!("Entry vanished: {}", filename)))?;
+            data_offset += 1                         // filename_len
+                + entry.filename.len() as u64       // filename
+                + 16                                // md5
+                + 4                                 // compressed_size
+                + 4                                 // uncompressed_size
+                + 8                                 // offset
+                + 1;                                // grf_path_len
+            if let Some(grf_path) = &entry.grf_path {
+                data_offset += grf_path.len() as u64;
+            }
+        }
+
+        let mut file = std::fs::File::create(path)?;
+        file.write_all(BEAM_MAGIC)?;
+        file.write_all(&self.version.to_le_bytes())?;
+        file.write_all(&(order.len() as u32).to_le_bytes())?;
+        file.write_all(&[0u8; 52])?; // Reserved
+
+        // Table — write entries with accurate sizes and *real* offsets.
+        let mut current_offset = data_offset;
+        for (filename, compressed) in &compressed_files {
+            let entry = self.entries.get_mut(filename)
+                .ok_or_else(|| Error::Custom(format!("Entry vanished: {}", filename)))?;
+
             file.write_all(&[filename.len() as u8])?;
             file.write_all(filename.as_bytes())?;
             file.write_all(&entry.md5_hash)?;
             file.write_all(&entry.compressed_size.to_le_bytes())?;
             file.write_all(&entry.uncompressed_size.to_le_bytes())?;
             file.write_all(&current_offset.to_le_bytes())?;
-            
+
             if let Some(grf_path) = &entry.grf_path {
                 file.write_all(&[grf_path.len() as u8])?;
                 file.write_all(grf_path.as_bytes())?;
             } else {
                 file.write_all(&[0u8])?;
             }
-            
+
             entry.offset = current_offset;
-            current_offset += entry.compressed_size as u64;
+            current_offset += compressed.len() as u64;
         }
-        
+
+        // Data region — must be written in the same order the table promised.
         for (_filename, compressed) in &compressed_files {
             file.write_all(compressed)?;
         }
-        
+
         self.file_path = Some(path.to_path_buf());
-        
         Ok(())
     }
 
@@ -285,11 +305,12 @@ impl BeamArchive {
 
     pub fn verify_file(&self, filename: &str) -> Result<bool> {
         let data = self.extract_file(filename)?;
-        let entry = self.entries.get(filename).unwrap();
-        
+        let entry = self.entries.get(filename)
+            .ok_or_else(|| Error::FileNotFound(filename.to_string()))?;
+
         let digest = md5::compute(&data);
         let calculated_hash: [u8; 16] = digest.0;
-        
+
         Ok(calculated_hash == entry.md5_hash)
     }
 }
@@ -297,5 +318,31 @@ impl BeamArchive {
 impl Default for BeamArchive {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_open_roundtrip_with_grf_path() {
+        let mut archive = BeamArchive::new();
+        let payload = b"hello there, beam archive!".to_vec();
+        archive
+            .add_file_with_grf_path("logical/foo.txt", "data\\foo.txt", &payload)
+            .unwrap();
+
+        let tmp = std::env::temp_dir()
+            .join(format!("beam_archive_test_{}.beam", std::process::id()));
+        archive.save(&tmp).unwrap();
+
+        let opened = BeamArchive::open(&tmp).unwrap();
+        let entry = opened.get_entry("logical/foo.txt").expect("entry survived save");
+        assert_eq!(entry.grf_path.as_deref(), Some("data\\foo.txt"));
+        let got = opened.extract_file("logical/foo.txt").unwrap();
+        assert_eq!(got, payload);
+        assert!(opened.verify_file("logical/foo.txt").unwrap());
+        let _ = std::fs::remove_file(&tmp);
     }
 }

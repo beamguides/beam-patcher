@@ -57,18 +57,39 @@ impl Updater {
     
     pub async fn perform_update(&self, version_info: &VersionInfo) -> Result<()> {
         info!("Downloading update from: {}", version_info.download_url);
-        
-        let update_builder = self_update::backends::github::Update::configure()
-            .repo_owner("your-org")
-            .repo_name("beam-patcher")
-            .bin_name("beam-patcher")
-            .current_version(&self.config.app.version)
-            .build()
-            .map_err(|e| Error::UpdateFailed(e.to_string()))?;
-        
-        let status = update_builder.update()
-            .map_err(|e| Error::UpdateFailed(e.to_string()))?;
-        
+
+        // Defaults track the upstream repo. Operators can override per-build
+        // via UpdaterConfig.github_repo without recompiling.
+        let (owner, name, bin_name) = match self
+            .config
+            .updater
+            .as_ref()
+            .and_then(|u| u.github_repo.as_ref())
+        {
+            Some(r) => (r.owner.clone(), r.name.clone(), r.bin_name.clone()),
+            None => (
+                "beamguides".to_string(),
+                "beam-patcher".to_string(),
+                "beam-patcher".to_string(),
+            ),
+        };
+
+        // `self_update` is blocking — keep it off the async runtime.
+        let current_version = self.config.app.version.clone();
+        let status = tokio::task::spawn_blocking(move || {
+            let update_builder = self_update::backends::github::Update::configure()
+                .repo_owner(&owner)
+                .repo_name(&name)
+                .bin_name(&bin_name)
+                .current_version(&current_version)
+                .build()
+                .map_err(|e| e.to_string())?;
+            update_builder.update().map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| Error::UpdateFailed(format!("Updater task join error: {}", e)))?
+        .map_err(Error::UpdateFailed)?;
+
         info!("Update completed: {:?}", status);
         Ok(())
     }

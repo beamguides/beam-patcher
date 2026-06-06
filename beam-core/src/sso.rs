@@ -77,21 +77,13 @@ impl SsoClient {
     
     pub async fn launch_game(&self, token: &str, executable: &str) -> Result<()> {
         info!("Launching game with SSO token");
-        
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new(executable)
-                .arg(format!("-token:{}", token))
-                .spawn()?;
-        }
-        
-        #[cfg(not(target_os = "windows"))]
-        {
-            std::process::Command::new(executable)
-                .arg(format!("--token={}", token))
-                .spawn()?;
-        }
-        
+
+        // Tokens passed via argv are visible to any local user via Task Manager
+        // / `ps`. Use an environment variable that the client can read on startup.
+        std::process::Command::new(executable)
+            .env("BEAM_SSO_TOKEN", token)
+            .spawn()?;
+
         Ok(())
     }
 }

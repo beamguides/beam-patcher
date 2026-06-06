@@ -38,9 +38,9 @@ pub async fn check_patches_available(state: State<'_, AppState>) -> Result<usize
 #[tauri::command]
 pub async fn start_patching(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
     let config = state.config.lock().unwrap().clone();
-    
+
     let progress_state = state.progress.clone();
-    
+
     {
         let mut progress = progress_state.lock().unwrap();
         progress.status = "Initializing...".to_string();
@@ -49,54 +49,54 @@ pub async fn start_patching(state: State<'_, AppState>, app: AppHandle) -> Resul
         progress.bytes_downloaded = 0;
         progress.bytes_total = 0;
     }
-    
+
     let patcher = Patcher::new(config).map_err(|e| e.to_string())?;
-    
+
     let patches = patcher.get_patch_list().await.map_err(|e| e.to_string())?;
     let total_patches = patches.len();
-    
+    let filenames: Vec<String> = patches.iter().map(|p| p.filename.clone()).collect();
+
     {
         let mut progress = progress_state.lock().unwrap();
         progress.total = total_patches;
         progress.status = format!("Found {} patches to download", total_patches);
     }
-    
-    app.emit_all("patch-progress", progress_state.lock().unwrap().clone())
+
+    let snapshot = progress_state.lock().unwrap().clone();
+    app.emit_all("patch-progress", snapshot)
         .map_err(|e: tauri::Error| e.to_string())?;
-    
-    for (idx, patch) in patches.iter().enumerate() {
-        {
-            let mut progress = progress_state.lock().unwrap();
-            progress.current = idx + 1;
-            progress.filename = patch.filename.clone();
-            progress.status = format!("Downloading {} ({}/{})", patch.filename, idx + 1, total_patches);
-            progress.bytes_total = patch.size.unwrap_or(0);
-            progress.bytes_downloaded = 0;
-        }
-        
-        app.emit_all("patch-progress", progress_state.lock().unwrap().clone())
-            .map_err(|e: tauri::Error| e.to_string())?;
-        
-        let progress_clone = progress_state.clone();
-        let app_clone = app.clone();
-        
-        patcher.download_and_apply_patch(patch, move |downloaded, total| {
+
+    let progress_clone = progress_state.clone();
+    let app_clone = app.clone();
+
+    // Batched path: GRF is opened once and rebuilt once at the end (huge win
+    // on multi-patch updates over a large data.grf).
+    patcher
+        .download_and_apply_patches(&patches, move |idx, total, downloaded, bytes_total| {
             let mut progress = progress_clone.lock().unwrap();
+            let fname = filenames.get(idx).cloned().unwrap_or_default();
+            progress.current = idx + 1;
+            progress.filename = fname.clone();
             progress.bytes_downloaded = downloaded;
-            progress.bytes_total = total;
-            let _ = app_clone.emit_all("patch-progress", progress.clone());
-        }).await.map_err(|e| e.to_string())?;
-    }
-    
+            progress.bytes_total = bytes_total;
+            progress.status = format!("Patch {}/{}: {}", idx + 1, total, fname);
+            let snapshot = progress.clone();
+            drop(progress);
+            let _ = app_clone.emit_all("patch-progress", snapshot);
+        })
+        .await
+        .map_err(|e| e.to_string())?;
+
     {
         let mut progress = progress_state.lock().unwrap();
         progress.status = "Patching complete!".to_string();
         progress.current = total_patches;
     }
-    
-    app.emit_all("patch-progress", progress_state.lock().unwrap().clone())
+
+    let snapshot = progress_state.lock().unwrap().clone();
+    app.emit_all("patch-progress", snapshot)
         .map_err(|e: tauri::Error| e.to_string())?;
-    
+
     Ok(())
 }
 
@@ -225,7 +225,6 @@ pub async fn get_news(state: State<'_, AppState>) -> Result<Vec<NewsItem>, Strin
     if let Some(news_url) = config.ui.news_feed_url {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(10))
-            .danger_accept_invalid_certs(true)
             .build()
             .map_err(|e| e.to_string())?;
         

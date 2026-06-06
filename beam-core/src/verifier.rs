@@ -31,6 +31,7 @@ pub struct Verifier {
     config: Config,
     manifest_url: String,
     base_dir: PathBuf,
+    client: reqwest::Client,
 }
 
 impl Verifier {
@@ -40,11 +41,17 @@ impl Verifier {
         } else {
             crate::get_executable_dir()?
         };
-        
+
+        let client = reqwest::Client::builder()
+            .user_agent("Beam-Patcher/1.0")
+            .timeout(std::time::Duration::from_secs(60))
+            .build()?;
+
         Ok(Verifier {
             config,
             manifest_url,
             base_dir,
+            client,
         })
     }
     
@@ -97,9 +104,8 @@ impl Verifier {
     
     async fn download_manifest(&self) -> Result<FileManifest> {
         info!("Downloading file manifest from: {}", self.manifest_url);
-        
-        let client = reqwest::Client::new();
-        let response = client.get(&self.manifest_url).send().await?;
+
+        let response = self.client.get(&self.manifest_url).send().await?;
         
         if !response.status().is_success() {
             return Err(Error::DownloadFailed(format!(

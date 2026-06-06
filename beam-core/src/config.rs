@@ -112,6 +112,19 @@ pub struct UpdaterConfig {
     pub check_url: String,
     pub update_url: String,
     pub auto_update: bool,
+    /// GitHub release source for the self-updater. Optional — when omitted
+    /// the patcher falls back to the built-in defaults (beamguides/beam-patcher).
+    #[serde(default)]
+    pub github_repo: Option<GithubRepo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GithubRepo {
+    pub owner: String,
+    pub name: String,
+    /// Asset prefix used when picking which release artifact to download.
+    /// e.g. `beam-patcher` matches `beam-patcher-1.2.3-x86_64.zip`.
+    pub bin_name: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,6 +167,10 @@ impl Config {
         Ok(())
     }
     
+    /// Build the seed configuration written when no `config.yml` exists yet.
+    /// Kept as an inherent method (and mirrored by `Default`) so callers can
+    /// invoke `Config::default()` regardless of which path resolves.
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Config {
             app: AppConfig {
@@ -216,6 +233,7 @@ impl Config {
                 check_url: "https://patch.example.com/version.json".to_string(),
                 update_url: "https://patch.example.com/updates".to_string(),
                 auto_update: false,
+                github_repo: None,
             }),
             server: Some(ServerConfig {
                 login_server_ip: "127.0.0.1".to_string(),

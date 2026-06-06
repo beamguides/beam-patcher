@@ -4,7 +4,7 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt, BufWriter};
 use tracing::{debug, info, warn};
 use std::collections::HashSet;
 
@@ -56,17 +56,16 @@ impl Downloader {
     }
     
     pub fn mark_patch_applied(&self, filename: &str) -> Result<()> {
-        let mut applied = self.load_applied_patches()?;
-        applied.insert(filename.to_string());
-        
-        let content = applied.iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("\n");
-        
-        std::fs::write(&self.cache_file, content)?;
+        use std::io::Write;
+        // O(1) append + fsync — avoids rewriting whole cache every call.
+        // Duplicates are tolerated; load_applied_patches dedupes via HashSet.
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.cache_file)?;
+        writeln!(file, "{}", filename)?;
+        file.sync_data()?;
         info!("Marked patch as applied: {}", filename);
-        
         Ok(())
     }
     
@@ -119,36 +118,38 @@ impl Downloader {
         destination: &Path,
     ) -> Result<PathBuf> {
         debug!("Downloading: {}", url);
-        
+
         let response = self.client.get(url).send().await?;
-        
+
         if !response.status().is_success() {
             return Err(Error::DownloadFailed(format!(
                 "HTTP error: {}",
                 response.status()
             )));
         }
-        
-        let _total_size = response.content_length().unwrap_or(0);
-        let mut _downloaded: u64 = 0;
-        
-        let filepath = destination.to_path_buf();
-        tokio::fs::create_dir_all(filepath.parent().unwrap()).await?;
-        let mut file = File::create(&filepath).await?;
-        
-        let mut stream = response.bytes_stream();
-        
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-            
-            _downloaded += chunk.len() as u64;
+
+        if let Some(parent) = destination.parent() {
+            tokio::fs::create_dir_all(parent).await?;
         }
-        
-        file.flush().await?;
-        
-        info!("Download completed: {:?}", filepath);
-        Ok(filepath)
+
+        // Atomic write: stream into a temp file, then rename. Interrupted
+        // downloads leave behind a .part file rather than a corrupt destination.
+        let tmp_path = tmp_path_for(destination);
+        {
+            let file = File::create(&tmp_path).await?;
+            let mut writer = BufWriter::with_capacity(64 * 1024, file);
+
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                writer.write_all(&chunk).await?;
+            }
+            writer.flush().await?;
+        }
+        tokio::fs::rename(&tmp_path, destination).await?;
+
+        info!("Download completed: {:?}", destination);
+        Ok(destination.to_path_buf())
     }
     
     pub async fn download_patch_list(&self) -> Result<Vec<PatchInfo>> {
@@ -218,14 +219,19 @@ impl Downloader {
         if !self.config.patcher.verify_checksums {
             return Ok(true);
         }
-        
-        let data = tokio::fs::read(file_path).await?;
+
+        // Streaming hash — avoids loading the entire patch (potentially GBs) into RAM.
+        let mut file = File::open(file_path).await?;
         let mut hasher = Sha256::new();
-        hasher.update(&data);
-        let result = hasher.finalize();
-        let hash = format!("{:x}", result);
-        
-        Ok(hash == expected)
+        let mut buffer = vec![0u8; 64 * 1024];
+        loop {
+            let n = file.read(&mut buffer).await?;
+            if n == 0 { break; }
+            hasher.update(&buffer[..n]);
+        }
+        let hash = format!("{:x}", hasher.finalize());
+
+        Ok(hash.eq_ignore_ascii_case(expected))
     }
     
     pub async fn download_file_with_progress<F>(
@@ -278,29 +284,67 @@ impl Downloader {
         F: FnMut(u64, u64),
     {
         let response = self.client.get(url).send().await?;
-        
+
         if !response.status().is_success() {
             return Err(Error::DownloadFailed(format!(
                 "HTTP error: {}",
                 response.status()
             )));
         }
-        
+
         let total_size = response.content_length().unwrap_or(0);
         let mut downloaded = 0u64;
-        
-        let mut file = File::create(destination).await?;
-        let mut stream = response.bytes_stream();
-        
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk?;
-            file.write_all(&chunk).await?;
-            downloaded += chunk.len() as u64;
-            progress_callback(downloaded, total_size);
+
+        if let Some(parent) = destination.parent() {
+            tokio::fs::create_dir_all(parent).await?;
         }
-        
-        file.flush().await?;
+
+        let tmp_path = tmp_path_for(destination);
+        {
+            let file = File::create(&tmp_path).await?;
+            let mut writer = BufWriter::with_capacity(64 * 1024, file);
+
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk?;
+                writer.write_all(&chunk).await?;
+                downloaded += chunk.len() as u64;
+                progress_callback(downloaded, total_size);
+            }
+            writer.flush().await?;
+        }
+        tokio::fs::rename(&tmp_path, destination).await?;
+
         Ok(destination.to_path_buf())
+    }
+}
+
+fn tmp_path_for(destination: &Path) -> PathBuf {
+    let mut s = destination.as_os_str().to_owned();
+    s.push(".part");
+    PathBuf::from(s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tmp_path_appends_part_extension() {
+        let p = tmp_path_for(Path::new("C:\\game\\data.grf"));
+        assert_eq!(p.to_string_lossy(), "C:\\game\\data.grf.part");
+    }
+
+    #[test]
+    fn tmp_path_handles_files_with_dots() {
+        let p = tmp_path_for(Path::new("/tmp/patch.0001.thor"));
+        assert_eq!(p.to_string_lossy(), "/tmp/patch.0001.thor.part");
+    }
+
+    #[test]
+    fn tmp_path_handles_no_extension() {
+        let p = tmp_path_for(Path::new("/tmp/noext"));
+        assert_eq!(p.to_string_lossy(), "/tmp/noext.part");
     }
 }
 

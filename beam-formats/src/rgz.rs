@@ -5,6 +5,11 @@ use flate2::Compression;
 use std::io::{Read, Write};
 use std::path::Path;
 
+// A single RGZ file entry should never claim more than this many bytes —
+// guards against DoS by malformed/malicious archives that declare a huge size
+// (e.g. 0xFFFFFFFF → 4 GiB) and trigger a runaway allocation.
+const MAX_RGZ_ENTRY_BYTES: u64 = 1024 * 1024 * 1024; // 1 GiB
+
 #[derive(Debug, Clone)]
 pub enum RgzEntry {
     File {
@@ -55,11 +60,22 @@ impl Rgz {
                     
                     let mut size_buf = [0u8; 4];
                     cursor.read_exact(&mut size_buf)?;
-                    let size = u32::from_le_bytes(size_buf);
-                    
+                    let size = u32::from_le_bytes(size_buf) as u64;
+
+                    if size > MAX_RGZ_ENTRY_BYTES {
+                        return Err(Error::Custom(format!(
+                            "RGZ file entry '{}' exceeds maximum size ({} bytes)",
+                            name, size
+                        )));
+                    }
+                    let remaining = cursor.get_ref().len() as u64 - cursor.position();
+                    if size > remaining {
+                        return Err(Error::InvalidRgzFormat);
+                    }
+
                     let mut data = vec![0u8; size as usize];
                     cursor.read_exact(&mut data)?;
-                    
+
                     entries.push(RgzEntry::File { name, data });
                 },
                 b'd' => {
@@ -114,7 +130,7 @@ impl Rgz {
                         return Err(Error::Custom("Name too long (max 254 bytes)".to_string()));
                     }
                     
-                    data.write_all(&[b'f'])?;
+                    data.write_all(b"f")?;
                     data.write_all(&[(name.len() + 1) as u8])?;
                     data.write_all(name.as_bytes())?;
                     data.write_all(&[0])?;
@@ -126,7 +142,7 @@ impl Rgz {
                         return Err(Error::Custom("Name too long (max 254 bytes)".to_string()));
                     }
                     
-                    data.write_all(&[b'd'])?;
+                    data.write_all(b"d")?;
                     data.write_all(&[(name.len() + 1) as u8])?;
                     data.write_all(name.as_bytes())?;
                     data.write_all(&[0])?;
@@ -134,14 +150,66 @@ impl Rgz {
             }
         }
         
-        data.write_all(&[b'e'])?;
+        data.write_all(b"e")?;
         
         let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
         encoder.write_all(&data)?;
         let compressed = encoder.finish()?;
         
         std::fs::write(path, compressed)?;
-        
+
         Ok(())
+    }
+}
+
+impl Default for Rgz {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_oversized_file_entry_without_panic() {
+        use std::io::Write as _;
+        // Build a gzipped RGZ payload that declares a 4 GiB file entry.
+        let mut payload = Vec::new();
+        payload.write_all(b"f").unwrap();        // entry type
+        payload.write_all(&[5u8]).unwrap();      // name_len (4 chars + null)
+        payload.write_all(b"hack\0").unwrap();   // name
+        payload.write_all(&u32::MAX.to_le_bytes()).unwrap(); // size
+        payload.write_all(b"e").unwrap();        // end marker (never reached)
+
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&payload).unwrap();
+        let gz = encoder.finish().unwrap();
+
+        let err = Rgz::from_bytes(&gz).unwrap_err();
+        // Either MAX_RGZ_ENTRY_BYTES cap or buffer-remaining check, both Err not panic.
+        match err {
+            Error::Custom(_) | Error::InvalidRgzFormat => {}
+            other => panic!("unexpected error: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn roundtrip_single_file() {
+        let mut r = Rgz::new();
+        r.add_file("data/test.txt", b"hello");
+        let tmp = std::env::temp_dir().join(format!("beam_rgz_test_{}.rgz", std::process::id()));
+        r.save(&tmp).unwrap();
+        let r2 = Rgz::open(&tmp).unwrap();
+        assert_eq!(r2.entries.len(), 1);
+        match &r2.entries[0] {
+            RgzEntry::File { name, data } => {
+                assert_eq!(name, "data/test.txt");
+                assert_eq!(data.as_slice(), b"hello");
+            }
+            _ => panic!("expected File entry"),
+        }
+        let _ = std::fs::remove_file(&tmp);
     }
 }

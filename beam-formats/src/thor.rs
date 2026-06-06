@@ -66,12 +66,20 @@ impl Thor {
         let mut file_table_compressed_len_buf = [0u8; 4];
         cursor.read_exact(&mut file_table_compressed_len_buf)?;
         let file_table_compressed_len = u32::from_le_bytes(file_table_compressed_len_buf) as usize;
-        
+
         let mut file_table_offset_buf = [0u8; 4];
         cursor.read_exact(&mut file_table_offset_buf)?;
         let file_table_offset = u32::from_le_bytes(file_table_offset_buf) as usize;
-        
-        let compressed_table_data = &data[file_table_offset..file_table_offset + file_table_compressed_len];
+
+        // Bounds-check the file table region before slicing — a malformed THOR
+        // header (offset/length past EOF) must not panic.
+        let table_end = file_table_offset
+            .checked_add(file_table_compressed_len)
+            .ok_or(Error::InvalidThorHeader)?;
+        if table_end > data.len() {
+            return Err(Error::InvalidThorHeader);
+        }
+        let compressed_table_data = &data[file_table_offset..table_end];
         
         let mut decoder = ZlibDecoder::new(compressed_table_data);
         let mut decompressed = Vec::new();
@@ -159,7 +167,7 @@ impl Thor {
             entries: Vec::new(),
         }
     }
-    
+
     pub fn add_file(&mut self, filename: &str, data: &[u8]) {
         self.entries.push(ThorEntry::Add {
             filename: filename.to_string(),
@@ -221,7 +229,9 @@ impl Thor {
         encoder.write_all(&table_data)?;
         let compressed_table = encoder.finish()?;
         
-        let header_size = 24 + 1 + 4 + 2 + 1 + 0 + 4 + 4;
+        // THOR header (no target_grf payload): 24 magic + 1 use_grf + 4 num_files
+        //                                    + 2 mode + 1 target_grf_len(=0) + 4 + 4 table fields
+        let header_size = 24 + 1 + 4 + 2 + 1 + 4 + 4;
         let file_table_offset = header_size + file_data.len();
         let file_table_compressed_length = compressed_table.len() as u32;
         
@@ -237,7 +247,48 @@ impl Thor {
         
         file.write_all(&file_data)?;
         file.write_all(&compressed_table)?;
-        
+
         Ok(())
+    }
+}
+
+impl Default for Thor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_truncated_header_without_panic() {
+        // Shorter than the 24-byte magic.
+        assert!(Thor::from_bytes(b"ASSF").is_err());
+        // 24 bytes of magic but missing every following field.
+        assert!(Thor::from_bytes(THOR_MAGIC).is_err());
+    }
+
+    #[test]
+    fn rejects_out_of_bounds_file_table_offset() {
+        // Craft a THOR with a sane magic but a file_table_offset past EOF.
+        // Layout up to file_table_offset (using mode 0x30, target_grf_len=0):
+        //   [24 magic][1 use_grf][4 num_files][2 mode][1 tg_len]
+        //   [4 file_table_compressed_len][4 file_table_offset]
+        let mut data = Vec::new();
+        data.extend_from_slice(THOR_MAGIC);
+        data.push(0x00);                                    // use_grf_merging
+        data.extend_from_slice(&0u32.to_le_bytes());        // num_files
+        data.extend_from_slice(&0x30i16.to_le_bytes());     // mode
+        data.push(0x00);                                    // target_grf_len
+        data.extend_from_slice(&16u32.to_le_bytes());       // compressed_len
+        // Offset is past end of file → must be rejected, not panic.
+        data.extend_from_slice(&0xFFFF_FFFFu32.to_le_bytes());
+
+        match Thor::from_bytes(&data) {
+            Err(Error::InvalidThorHeader) => {}
+            other => panic!("expected InvalidThorHeader, got {:?}", other),
+        }
     }
 }
